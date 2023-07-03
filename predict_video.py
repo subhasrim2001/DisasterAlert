@@ -118,6 +118,8 @@ def prediction(filename, o_filename):
     		prelabel = label    
     
     
+    	'''
+    	Commented writer for security - can uncomment if necessary
     	# check if the video writer is None
     	if writer is None:
     		# initialize our video writer
@@ -127,7 +129,7 @@ def prediction(filename, o_filename):
     
     	# write the output frame to disk
     	writer.write(output)
-    
+    	'''
     	# show the output image
     	cv2.imshow("Output", output)
     	key = cv2.waitKey(1) & 0xFF

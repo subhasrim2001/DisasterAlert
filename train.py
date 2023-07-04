@@ -1,7 +1,3 @@
-# USAGE
-# python train.py --dataset data --model model/activity.model --label-bin model/lb.pickle --epochs 80
-
-# set the matplotlib backend so figures can be saved in the background
 import matplotlib
 #matplotlib.use("Agg")
 
@@ -28,51 +24,32 @@ import os
 from sklearn.metrics import confusion_matrix
 from sklearn.utils.multiclass import unique_labels
 
-# construct the argument parser and parse the arguments
 args = {'dataset': 'data', 'model': 'model/activity_gpu.model', 'label_bin': 'model/lb.pickle', 'epochs': 25, 'plot':'plot.png'}
 
-
-# initialize the set of labels from the spots activity dataset we are
-# going to train our network on
 LABELS = set(["Cyclone", "Earthquake", "Flood", "Wildfire"])
 
-# grab the list of images in our dataset directory, then initialize
-# the list of data (i.e., images) and class images
 print("[INFO] loading images...")
 imagePaths = list(paths.list_images(args["dataset"]))
 data = []
 labels = []
 
-# loop over the image paths
 for imagePath in imagePaths:
-	# extract the class label from the filename
 	label = imagePath.split(os.path.sep)[-2]
-
-	# if the label of the current image is not part of of the labels
-	# are interested in, then ignore the image
 	if label not in LABELS:
 		continue
-
-	# load the image, convert it to RGB channel ordering, and resize
-	# it to be a fixed 224x224 pixels, ignoring aspect ratio
 	image = cv2.imread(imagePath)
 	image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 	image = cv2.resize(image, (224, 224))
-
-	# update the data and labels lists, respectively
 	data.append(image)
 	labels.append(label)
 
-# convert the data and labels to NumPy arrays
 data = np.array(data)
 labels = np.array(labels)
 
-# perform one-hot encoding on the labels
 lb = LabelBinarizer()
 labels = lb.fit_transform(labels)
 
-# partition the data into training and testing splits using 80% of
-# the data for training and the remaining 20% for testing
+# 80% train-test split
 (trainX, testX, trainY, testY) = train_test_split(data, labels,
 	test_size=0.20, stratify=labels, random_state=42)
 
@@ -86,24 +63,18 @@ trainAug = ImageDataGenerator(
 	horizontal_flip=True,
 	fill_mode="nearest")
 
-# initialize the validation/testing data augmentation object (which
-# we'll be adding mean subtraction to)
+# initialize the validation/testing data augmentation object
 valAug = ImageDataGenerator()
 
-# define the ImageNet mean subtraction (in RGB order) and set the
-# the mean subtraction value for each of the data augmentation
-# objects
 mean = np.array([123.68, 116.779, 103.939], dtype="float32")
 trainAug.mean = mean
 valAug.mean = mean
 
-# load the ResNet-50 network, ensuring the head FC layer sets are left
-# off
+# load the ResNet-50 network, ensuring the head FC layer sets are left off
 baseModel = ResNet50(weights="imagenet", include_top=False,
 	input_tensor=Input(shape=(224, 224, 3)))
 
-# construct the head of the model that will be placed on top of the
-# the base model
+# construct the head of the model that will be placed on top of the base model
 headModel = baseModel.output
 headModel = AveragePooling2D(pool_size=(7, 7))(headModel)
 headModel = Flatten(name="flatten")(headModel)
@@ -111,27 +82,16 @@ headModel = Dense(512, activation="relu")(headModel)
 headModel = Dropout(0.5)(headModel)
 headModel = Dense(len(lb.classes_), activation="softmax")(headModel)
 
-# place the head FC model on top of the base model (this will become
-# the actual model we will train)
+# place the head FC model on top of the base model - actual trained model
 model = Model(inputs=baseModel.input, outputs=headModel)
 
-# loop over all layers in the base model and freeze them so they will
-# *not* be updated during the training process
 for layer in baseModel.layers:
 	layer.trainable = False
 
-# compile our model (this needs to be done after our setting our
-# layers to being non-trainable)
 print("[INFO] compiling model...")
 opt = SGD(lr=1e-4, momentum=0.9, decay=1e-4 / args["epochs"])
 model.compile(loss="categorical_crossentropy", optimizer=opt,
 	metrics=["accuracy"])
-
-
-
-# train the head of the network for a few epochs (all other layers
-# are frozen) -- this will allow the new FC layers to start to become
-# initialized with actual "learned" values versus pure random
 print("[INFO] training head...")
 H = model.fit_generator(
 	trainAug.flow(trainX, trainY, batch_size=32),
@@ -140,19 +100,14 @@ H = model.fit_generator(
 	validation_steps=len(testX) // 32,
 	epochs=args["epochs"])
 
-# evaluate the network
 print("[INFO] evaluating network...")
 y_score = model.predict(testX, batch_size=32)
 print(classification_report(testY.argmax(axis=1),
 	y_score.argmax(axis=1), target_names=lb.classes_))
-#-------------------------Evaluation Curves---------------------------------------------------------
 
+# Plotting curves
 lw = 2
-#from sklearn import svm, datasets
 from sklearn.metrics import roc_curve, auc
-#from sklearn.model_selection import train_test_split
-#from sklearn.preprocessing import label_binarize
-#from sklearn.multiclass import OneVsRestClassifier
 from scipy import interp
 # Compute ROC curve and ROC area for each class
 fpr = dict()
@@ -167,8 +122,6 @@ for i in range(n_classes):
 # Compute micro-average ROC curve and ROC area
 fpr["micro"], tpr["micro"], _ = roc_curve(testY.ravel(), y_score.ravel())
 roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])    
-
-# =============Plot all ROC curves===============================
 plt.clf()
 plt.figure(1)
 plt.plot(fpr["micro"], tpr["micro"],
@@ -183,14 +136,12 @@ plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.title('Receiver Operating Characteristic Curve')
 plt.legend(loc="lower right")
-#plt.show()
 plt.savefig('ROC.eps', format='eps', dpi=1000)
 plt.savefig('ROC.png', format='png', dpi=1000)
-#------------PR curve---------------
+# PR Curve
 from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import auc
 from sklearn.metrics import average_precision_score
-    #n_classes = y_test.shape[1]
 precision = dict()
 recall = dict()
 average_precision = dict()
@@ -199,20 +150,15 @@ for i in range(n_classes):
                                                             y_score[:, i])
     average_precision[i] = average_precision_score(testY[:, i], y_score[:, i])
 
-    # A "micro-average": quantifying score on all classes jointly
 precision["micro"], recall["micro"], _ = precision_recall_curve(testY.ravel(),
         y_score.ravel())
 average_precision["micro"] = average_precision_score(testY, y_score,
                                                          average="micro")
-    #print('Average precision score, micro-averaged over all classes: {0:0.2f}'
-    #      .format(average_precision["micro"]))
 plt.clf()
 plt.figure(2)
 plt.step(recall['micro'], precision['micro'], color='b', alpha=0.2,
              where='post')
-plt.fill_between(recall["micro"], precision["micro"], alpha=0.2, color='b')#,
-    #                 **step_kwargs)
-
+plt.fill_between(recall["micro"], precision["micro"], alpha=0.2, color='b')
 plt.xlabel('Recall')
 plt.ylabel('Precision')
 plt.ylim([0.0, 1.05])
